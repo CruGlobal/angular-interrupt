@@ -103,8 +103,8 @@
 
       }
     ])
-    .controller('modal', ['$log', '$scope', 'dialog',
-      function (log, scope, dialog) {
+    .controller('modal', ['$scope', 'dialog',
+      function (scope, dialog) {
 
         scope.close = function (result) {
           dialog.close(result);
