@@ -27,17 +27,44 @@
         var sra = dialog.dialog(sraOptions);
         var piu = dialog.dialog(piuOptions);
 
-        var cookieName = 'doNotInterrupt';
+        var cookieName = 'doNotInterruptForNow';
+
+        function setDoNotInterruptCookie() {
+          //note: we cannot simply do this:
+          //  cookies[cookieName] = 'y';
+          //because this sets a session cookie, and Chrome and FF no longer flush session cookies on browser restarts;
+          //the end result is the doNotInterruptForNow cookie remains effective way longer than we intend it to be.
+          //So, we set a cookie the manual way whose expiration is a short time in the future.
+          var expiration = tomorrow();
+          document.cookie = cookieName + '=y;expires='+expiration.toUTCString() + ';';
+        }
+
+        function tomorrow() {
+          var today = new Date();
+          var tomorrow = new Date(today);
+          tomorrow.setDate(today.getDate() + 1);
+          return tomorrow;
+        }
+
+        function handleFailedInterrupt(error){
+          log.error(error);
+          setDoNotInterruptCookie();
+          alert(
+            "We apologize, but an error occurred we weren't able to save your selection. " +
+              "We won't interrupt you further today from this browser, but please \n" +
+              "(1) try this again in a different browser, and \n" +
+              "(2) contact techhelp@cru.org to notify us of the problem. \n" +
+              "Thank you, and sorry for the headache!");
+        }
+
         if (_.isUndefined(cookies[cookieName])) {
 
           sraInterrupt.get(scope).then(function (openSraModal) {
             if (openSraModal) {
               sra.open().then(function (result) {
                 sraUpdate.save(scope, result).then(function(successResponse){
-                  cookies[cookieName] = 'y';
-                }, function(error){
-                    alert("System Error! We apologize the failure of your submit request. Please contact to it.help@cru.org");
-                });
+                  setDoNotInterruptCookie();
+                }, handleFailedInterrupt);
               });
               addClassToModalDivWhenAvailable('div.modal-header', 'sra');
             }
@@ -45,13 +72,13 @@
               piuInterrupt.get(scope).then(function (openPiuModal) {
                 if(openPiuModal) {
                   piu.open().then(function (result){
-                    cookies[cookieName] = 'y';
-                  });
+                    setDoNotInterruptCookie();
+                  }, handleFailedInterrupt);
 
                   addClassToModalDivWhenAvailable('div.modal-header', 'piu');
                 }
                 else {
-                  cookies[cookieName] = 'y';
+                  setDoNotInterruptCookie();
                 }
               });
             }
@@ -76,8 +103,8 @@
 
       }
     ])
-    .controller('modal', ['$log', '$scope', 'dialog',
-      function (log, scope, dialog) {
+    .controller('modal', ['$scope', 'dialog',
+      function (scope, dialog) {
 
         scope.close = function (result) {
           dialog.close(result);
