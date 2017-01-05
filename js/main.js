@@ -36,7 +36,9 @@
           //the end result is the doNotInterruptForNow cookie remains effective way longer than we intend it to be.
           //So, we set a cookie the manual way whose expiration is a short time in the future.
           var expiration = tomorrow();
-          document.cookie = cookieName + '=y;expires='+expiration.toUTCString() + ';';
+          document.cookie = cookieName + '=y; ' +
+            'expires='+expiration.toUTCString() + '; ' +
+            'path=/'
         }
 
         function tomorrow() {
@@ -66,7 +68,7 @@
                   setDoNotInterruptCookie();
                 }, handleFailedInterrupt);
               });
-              addClassToModalDivWhenAvailable('div.modal-header', 'sra');
+              addClassToModalDivWhenAvailable('div.modal', 'sra');
             }
             else {
               piuInterrupt.get(scope).then(function (openPiuModal) {
@@ -75,7 +77,7 @@
                     setDoNotInterruptCookie();
                   }, handleFailedInterrupt);
 
-                  addClassToModalDivWhenAvailable('div.modal-header', 'piu');
+                  addClassToModalDivWhenAvailable('div.modal', 'piu');
                 }
                 else {
                   setDoNotInterruptCookie();
