@@ -66,7 +66,7 @@
                   setDoNotInterruptCookie();
                 }, handleFailedInterrupt);
               });
-              addClassToModalDivWhenAvailable('div.modal-header', 'sra');
+              addClassToModalDivWhenAvailable('div.modal', 'sra');
             }
             else {
               piuInterrupt.get(scope).then(function (openPiuModal) {
@@ -75,7 +75,7 @@
                     setDoNotInterruptCookie();
                   }, handleFailedInterrupt);
 
-                  addClassToModalDivWhenAvailable('div.modal-header', 'piu');
+                  addClassToModalDivWhenAvailable('div.modal', 'piu');
                 }
                 else {
                   setDoNotInterruptCookie();
