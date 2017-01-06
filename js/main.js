@@ -2,25 +2,25 @@
   'use strict';
 
   angular.module('interrupt', ['ui.bootstrap.dialog', 'ngCookies', 'ngResource', 'easyXdm'])
-    .controller('interrupt', ['$scope', '$log', '$dialog', '$cookies', 'sraInterrupt', 'piuInterrupt', 'sraUpdate',
-      function (scope, log, dialog, cookies, sraInterrupt, piuInterrupt, sraUpdate) {
+    .controller('interrupt', ['$scope', '$log', '$dialog', '$cookies', 'interruptService',
+      function (scope, log, dialog, cookies, interruptService) {
 
         var cookieName = 'doNotInterruptForNow';
 
         var interruptConfigurations = [
           {
-            interrupt: sraInterrupt,
+            interruptType: 'sra',
             modal: createModalDialog(window.relativeFragmentsRoot + '/sra-modal.html'),
             //in UCM: window.relativeFragmentsRoot + 'frag_sw_assets/piu-intercept/affirmation.html'
             modalClass: 'sra',
             handleResult: function (result) {
-              sraUpdate.save(scope, result).then(function (successResponse) {
+              interruptService.updateAgreementStatus('sra', result).then(function (successResponse) {
                 setDoNotInterruptCookie();
               }, handleFailedInterrupt);
             }
           },
           {
-            interrupt: piuInterrupt,
+            interruptType: 'piu',
             modal: createModalDialog(window.relativeFragmentsRoot + '/piu-modal.html'),
             //in UCM: window.relativeFragmentsRoot + 'frag_sw_assets/piu-intercept/modal.html'
             modalClass: 'piu',
@@ -88,15 +88,16 @@
 
         function buildInterruptStep(configuration, nextInterruptStep) {
           return function () {
-            configuration.interrupt.get(scope).then(function (openModal) {
-            if (openModal) {
-              configuration.modal.open().then(configuration.handleResult, handleFailedInterrupt);
-              addClassToModalDivWhenAvailable('div.modal', configuration.modalClass);
-            }
-            else {
-              nextInterruptStep();
-            }
-          });
+            interruptService.isInterruptRequired(configuration.interruptType)
+              .then(function (interruptIsRequired) {
+                if (interruptIsRequired) {
+                  configuration.modal.open().then(configuration.handleResult, handleFailedInterrupt);
+                  addClassToModalDivWhenAvailable('div.modal', configuration.modalClass);
+                }
+                else {
+                  nextInterruptStep();
+                }
+              });
           }
         }
 
@@ -127,60 +128,57 @@
 
       }
     ])
-    .service('true', ['$q',
-      function (q) {
+    .service('mockInterruptService', ['$q', '$log',
+      function (q, log) {
+
+        function promise(value) {
+          var deferred = q.defer();
+          deferred.resolve(value);
+          return deferred.promise;
+        }
+
         return {
-          'get': function () {
-            var deferred = q.defer();
 
-            deferred.resolve(true);
+          isInterruptRequired: function (interruptType) {
+            if (location.search.indexOf(interruptType) >= 0) {
+              return promise(true);
+            } else {
+              return promise(false);
+            }
+          },
 
-            return deferred.promise;
+          updateAgreementStatus: function(interruptType, status) {
+            log.info("updating agreement status: ", interruptType, status);
+            return promise("ok");
           }
         }
       }
     ])
-    .service('false', ['$q',
-      function (q) {
+    .service('interruptService', ['EasyXdm', '$rootScope',
+      function (easyXdm, $rootScope) {
         return {
-          'get': function () {
-            var deferred = q.defer();
 
-            deferred.resolve(false);
+          /* interruptType: piu or sra */
+          isInterruptRequired: function (interruptType) {
+            var path = '/wsapi/rest/staffwebinterruptrequired?popuptype=' + interruptType;
+            return easyXdm.fetch($rootScope, path);
+          },
 
-            return deferred.promise;
-          }
-        }
-      }
-    ])
-    .service('piuInterrupt', ['EasyXdm',
-      function (easyXdm) {
-        return {
-          'get': function (scope) {
-            return easyXdm.fetch(scope, '/wsapi/rest/staffwebinterruptrequired?popuptype=piu');
-          }
-        }
-      }
-    ])
-    .service('sraInterrupt', ['EasyXdm',
-      function (easyXdm) {
-        return {
-          'get': function (scope) {
-            return easyXdm.fetch(scope, '/wsapi/rest/staffwebinterruptrequired?popuptype=sra');
-          }
-        }
-      }
-    ])
-    .service('sraUpdate', ['EasyXdm',
-      function (easyXdm) {
-        return {
-          'save': function (scope, result) {
-            return easyXdm.fetch(scope, '/wsapi/rest/staffwebinterruptrequired/sraupdate', 'POST', {status: result});
-          }
-        }
-      }
-    ])
+          /* only for sra */
+          updateAgreementStatus: function(interruptType, status) {
+            var subpath;
+            if (interruptType === 'sra') {
+              subpath = 'sraupdate';
+            } else {
+              throw "bad interruptType: " + interruptType;
+            }
 
+            var path = '/wsapi/rest/staffwebinterruptrequired/' + subpath;
+            return easyXdm.fetch($rootScope, path, 'POST', {status: status});
+          }
+        }
+      }
+    ])
 
 })();
 
