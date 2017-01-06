@@ -13,11 +13,14 @@
             modal: createModalDialog(window.relativeFragmentsRoot + '/sra-modal.html'),
             //in UCM: window.relativeFragmentsRoot + 'frag_sw_assets/piu-intercept/affirmation.html'
             modalClass: 'sra',
-            handleResult: function (result) {
-              interruptService.updateAgreementStatus('sra', result).then(function (successResponse) {
-                setDoNotInterruptCookie();
-              }, handleFailedInterrupt);
-            }
+            handleResult: buildAgreementResultHandler('sra')
+          },
+          {
+            interruptType: 'credit-card-security-policy',
+            modal: createModalDialog(window.relativeFragmentsRoot + '/cc-modal.html'),
+            //in UCM: window.relativeFragmentsRoot + 'frag_sw_assets/piu-intercept/affirmation-cc.html'
+            modalClass: 'sra', // same styling as the sra window
+            handleResult: buildAgreementResultHandler('credit-card-security-policy')
           },
           {
             interruptType: 'piu',
@@ -40,6 +43,15 @@
             controller: 'modal',
             templateUrl: templateUrl
           });
+        }
+
+        function buildAgreementResultHandler(interruptType) {
+          return function(result) {
+            interruptService.updateAgreementStatus(interruptType, result)
+              .then(function (successResponse) {
+                setDoNotInterruptCookie();
+              }, handleFailedInterrupt);
+          }
         }
 
         function setDoNotInterruptCookie() {
@@ -158,17 +170,19 @@
       function (easyXdm, $rootScope) {
         return {
 
-          /* interruptType: piu or sra */
+          /* interruptType: piu or sra or credit-card-security-policy */
           isInterruptRequired: function (interruptType) {
             var path = '/wsapi/rest/staffwebinterruptrequired?popuptype=' + interruptType;
             return easyXdm.fetch($rootScope, path);
           },
 
-          /* only for sra */
+          /* only for sra and credit-card-security-policy */
           updateAgreementStatus: function(interruptType, status) {
             var subpath;
             if (interruptType === 'sra') {
               subpath = 'sraupdate';
+            } else if (interruptType == 'credit-card-security-policy') {
+              subpath = 'credit-card-security-policy-update';
             } else {
               throw "bad interruptType: " + interruptType;
             }
