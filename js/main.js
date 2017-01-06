@@ -5,29 +5,42 @@
     .controller('interrupt', ['$scope', '$log', '$dialog', '$cookies', 'sraInterrupt', 'piuInterrupt', 'sraUpdate',
       function (scope, log, dialog, cookies, sraInterrupt, piuInterrupt, sraUpdate) {
 
-        var sraOptions = {
-          backdrop: true,
-          backdropFade: true,
-          dialogFade: true,
-          keyboard: false,
-          backdropClick: false,
-          controller: 'modal',
-          templateUrl: window.relativeFragmentsRoot + '/sra-modal.html'  //in UCM: window.relativeFragmentsRoot + 'frag_sw_assets/piu-intercept/affirmation.html'
-        }
-        var piuOptions = {
-          backdrop: true,
-          backdropFade: true,
-          dialogFade: true,
-          keyboard: false,
-          backdropClick: false,
-          controller: 'modal',
-          templateUrl: window.relativeFragmentsRoot + '/piu-modal.html'  //in UCM: window.relativeFragmentsRoot + 'frag_sw_assets/piu-intercept/modal.html'
-        }
-
-        var sra = dialog.dialog(sraOptions);
-        var piu = dialog.dialog(piuOptions);
-
         var cookieName = 'doNotInterruptForNow';
+
+        var interruptConfigurations = [
+          {
+            interrupt: sraInterrupt,
+            modal: createModalDialog(window.relativeFragmentsRoot + '/sra-modal.html'),
+            //in UCM: window.relativeFragmentsRoot + 'frag_sw_assets/piu-intercept/affirmation.html'
+            modalClass: 'sra',
+            handleResult: function (result) {
+              sraUpdate.save(scope, result).then(function (successResponse) {
+                setDoNotInterruptCookie();
+              }, handleFailedInterrupt);
+            }
+          },
+          {
+            interrupt: piuInterrupt,
+            modal: createModalDialog(window.relativeFragmentsRoot + '/piu-modal.html'),
+            //in UCM: window.relativeFragmentsRoot + 'frag_sw_assets/piu-intercept/modal.html'
+            modalClass: 'piu',
+            handleResult: function (result) {
+              setDoNotInterruptCookie();
+            }
+          }
+        ];
+
+        function createModalDialog(templateUrl) {
+          return dialog.dialog({
+            backdrop: true,
+            backdropFade: true,
+            dialogFade: true,
+            keyboard: false,
+            backdropClick: false,
+            controller: 'modal',
+            templateUrl: templateUrl
+          });
+        }
 
         function setDoNotInterruptCookie() {
           //note: we cannot simply do this:
@@ -60,31 +73,31 @@
         }
 
         if (_.isUndefined(cookies[cookieName])) {
+          performInterruptIfNecessary();
+        }
 
-          sraInterrupt.get(scope).then(function (openSraModal) {
-            if (openSraModal) {
-              sra.open().then(function (result) {
-                sraUpdate.save(scope, result).then(function(successResponse){
-                  setDoNotInterruptCookie();
-                }, handleFailedInterrupt);
-              });
-              addClassToModalDivWhenAvailable('div.modal', 'sra');
+        function performInterruptIfNecessary() {
+          var nextInterruptStep = setDoNotInterruptCookie;
+          for (var i = interruptConfigurations.length - 1; i >= 0; i--) {
+            var configuration = interruptConfigurations[i];
+            nextInterruptStep = buildInterruptStep(configuration, nextInterruptStep);
+          }
+
+          nextInterruptStep();
+        }
+
+        function buildInterruptStep(configuration, nextInterruptStep) {
+          return function () {
+            configuration.interrupt.get(scope).then(function (openModal) {
+            if (openModal) {
+              configuration.modal.open().then(configuration.handleResult, handleFailedInterrupt);
+              addClassToModalDivWhenAvailable('div.modal', configuration.modalClass);
             }
             else {
-              piuInterrupt.get(scope).then(function (openPiuModal) {
-                if(openPiuModal) {
-                  piu.open().then(function (result){
-                    setDoNotInterruptCookie();
-                  }, handleFailedInterrupt);
-
-                  addClassToModalDivWhenAvailable('div.modal', 'piu');
-                }
-                else {
-                  setDoNotInterruptCookie();
-                }
-              });
+              nextInterruptStep();
             }
           });
+          }
         }
 
         function addClassToModalDivWhenAvailable(divSelector, className)
