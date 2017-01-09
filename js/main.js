@@ -2,32 +2,57 @@
   'use strict';
 
   angular.module('interrupt', ['ui.bootstrap.dialog', 'ngCookies', 'ngResource', 'easyXdm'])
-    .controller('interrupt', ['$scope', '$log', '$dialog', '$cookies', 'sraInterrupt', 'piuInterrupt', 'sraUpdate',
-      function (scope, log, dialog, cookies, sraInterrupt, piuInterrupt, sraUpdate) {
-
-        var sraOptions = {
-          backdrop: true,
-          backdropFade: true,
-          dialogFade: true,
-          keyboard: false,
-          backdropClick: false,
-          controller: 'modal',
-          templateUrl: window.relativeFragmentsRoot + '/sra-modal.html'  //in UCM: window.relativeFragmentsRoot + 'frag_sw_assets/piu-intercept/affirmation.html'
-        }
-        var piuOptions = {
-          backdrop: true,
-          backdropFade: true,
-          dialogFade: true,
-          keyboard: false,
-          backdropClick: false,
-          controller: 'modal',
-          templateUrl: window.relativeFragmentsRoot + '/piu-modal.html'  //in UCM: window.relativeFragmentsRoot + 'frag_sw_assets/piu-intercept/modal.html'
-        }
-
-        var sra = dialog.dialog(sraOptions);
-        var piu = dialog.dialog(piuOptions);
+    .controller('interrupt', ['$scope', '$log', '$dialog', '$cookies', 'interruptService',
+      function (scope, log, dialog, cookies, interruptService) {
 
         var cookieName = 'doNotInterruptForNow';
+
+        var interruptConfigurations = [
+          {
+            interruptType: 'sra',
+            modal: createModalDialog(window.relativeFragmentsRoot + '/sra-modal.html'),
+            //in UCM: window.relativeFragmentsRoot + 'frag_sw_assets/piu-intercept/affirmation.html'
+            modalClass: 'sra',
+            handleResult: buildAgreementResultHandler('sra')
+          },
+          {
+            interruptType: 'credit-card-security-policy',
+            modal: createModalDialog(window.relativeFragmentsRoot + '/cc-modal.html'),
+            //in UCM: window.relativeFragmentsRoot + 'frag_sw_assets/piu-intercept/affirmation-cc.html'
+            modalClass: 'sra', // same styling as the sra window
+            handleResult: buildAgreementResultHandler('credit-card-security-policy')
+          },
+          {
+            interruptType: 'piu',
+            modal: createModalDialog(window.relativeFragmentsRoot + '/piu-modal.html'),
+            //in UCM: window.relativeFragmentsRoot + 'frag_sw_assets/piu-intercept/modal.html'
+            modalClass: 'piu',
+            handleResult: function (result) {
+              setDoNotInterruptCookie();
+            }
+          }
+        ];
+
+        function createModalDialog(templateUrl) {
+          return dialog.dialog({
+            backdrop: true,
+            backdropFade: true,
+            dialogFade: true,
+            keyboard: false,
+            backdropClick: false,
+            controller: 'modal',
+            templateUrl: templateUrl
+          });
+        }
+
+        function buildAgreementResultHandler(interruptType) {
+          return function(result) {
+            interruptService.updateAgreementStatus(interruptType, result)
+              .then(function (successResponse) {
+                setDoNotInterruptCookie();
+              }, handleFailedInterrupt);
+          }
+        }
 
         function setDoNotInterruptCookie() {
           //note: we cannot simply do this:
@@ -60,31 +85,32 @@
         }
 
         if (_.isUndefined(cookies[cookieName])) {
+          performInterruptIfNecessary();
+        }
 
-          sraInterrupt.get(scope).then(function (openSraModal) {
-            if (openSraModal) {
-              sra.open().then(function (result) {
-                sraUpdate.save(scope, result).then(function(successResponse){
-                  setDoNotInterruptCookie();
-                }, handleFailedInterrupt);
-              });
-              addClassToModalDivWhenAvailable('div.modal', 'sra');
-            }
-            else {
-              piuInterrupt.get(scope).then(function (openPiuModal) {
-                if(openPiuModal) {
-                  piu.open().then(function (result){
-                    setDoNotInterruptCookie();
-                  }, handleFailedInterrupt);
+        function performInterruptIfNecessary() {
+          var nextInterruptStep = setDoNotInterruptCookie;
+          for (var i = interruptConfigurations.length - 1; i >= 0; i--) {
+            var configuration = interruptConfigurations[i];
+            nextInterruptStep = buildInterruptStep(configuration, nextInterruptStep);
+          }
 
-                  addClassToModalDivWhenAvailable('div.modal', 'piu');
+          nextInterruptStep();
+        }
+
+        function buildInterruptStep(configuration, nextInterruptStep) {
+          return function () {
+            interruptService.isInterruptRequired(configuration.interruptType)
+              .then(function (interruptIsRequired) {
+                if (interruptIsRequired) {
+                  configuration.modal.open().then(configuration.handleResult, handleFailedInterrupt);
+                  addClassToModalDivWhenAvailable('div.modal', configuration.modalClass);
                 }
                 else {
-                  setDoNotInterruptCookie();
+                  nextInterruptStep();
                 }
               });
-            }
-          });
+          }
         }
 
         function addClassToModalDivWhenAvailable(divSelector, className)
@@ -114,60 +140,59 @@
 
       }
     ])
-    .service('true', ['$q',
-      function (q) {
+    .service('mockInterruptService', ['$q', '$log',
+      function (q, log) {
+
+        function promise(value) {
+          var deferred = q.defer();
+          deferred.resolve(value);
+          return deferred.promise;
+        }
+
         return {
-          'get': function () {
-            var deferred = q.defer();
 
-            deferred.resolve(true);
+          isInterruptRequired: function (interruptType) {
+            if (location.search.indexOf(interruptType) >= 0) {
+              return promise(true);
+            } else {
+              return promise(false);
+            }
+          },
 
-            return deferred.promise;
+          updateAgreementStatus: function(interruptType, status) {
+            log.info("updating agreement status: ", interruptType, status);
+            return promise("ok");
           }
         }
       }
     ])
-    .service('false', ['$q',
-      function (q) {
+    .service('interruptService', ['EasyXdm', '$rootScope',
+      function (easyXdm, $rootScope) {
         return {
-          'get': function () {
-            var deferred = q.defer();
 
-            deferred.resolve(false);
+          /* interruptType: piu or sra or credit-card-security-policy */
+          isInterruptRequired: function (interruptType) {
+            var path = '/wsapi/rest/staffwebinterruptrequired?popuptype=' + interruptType;
+            return easyXdm.fetch($rootScope, path);
+          },
 
-            return deferred.promise;
-          }
-        }
-      }
-    ])
-    .service('piuInterrupt', ['EasyXdm',
-      function (easyXdm) {
-        return {
-          'get': function (scope) {
-            return easyXdm.fetch(scope, '/wsapi/rest/staffwebinterruptrequired?popuptype=piu');
-          }
-        }
-      }
-    ])
-    .service('sraInterrupt', ['EasyXdm',
-      function (easyXdm) {
-        return {
-          'get': function (scope) {
-            return easyXdm.fetch(scope, '/wsapi/rest/staffwebinterruptrequired?popuptype=sra');
-          }
-        }
-      }
-    ])
-    .service('sraUpdate', ['EasyXdm',
-      function (easyXdm) {
-        return {
-          'save': function (scope, result) {
-            return easyXdm.fetch(scope, '/wsapi/rest/staffwebinterruptrequired/sraupdate', 'POST', {status: result});
-          }
-        }
-      }
-    ])
+          /* only for sra and credit-card-security-policy */
+          updateAgreementStatus: function(interruptType, status) {
+            var subpath;
+            if (interruptType === 'sra') {
+              subpath = 'sraupdate';
+            } else if (interruptType == 'credit-card-security-policy') {
+              subpath = 'credit-card-security-policy-update';
+            } else {
+              throw "bad interruptType: " + interruptType;
+            }
 
+            var path = '/wsapi/rest/staffwebinterruptrequired/' + subpath;
+            return easyXdm.fetch($rootScope, path, 'POST', {status: status});
+          }
+        }
+      }
+    ])
 
 })();
 

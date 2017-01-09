@@ -62,7 +62,7 @@
             var data = response.data;
             var contentType = response.headers["Content-Type"];
             var resolution;
-            if (contentType == 'plain/text')
+            if (contentType == 'text/plain')
               resolution = data;
             else {
               resolution = angular.fromJson(data);
